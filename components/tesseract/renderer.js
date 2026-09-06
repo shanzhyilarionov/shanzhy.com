@@ -5,23 +5,27 @@
  *
  * Pipeline, all of it in linear light:
  *
- *   1. rear edges          additive, into an offscreen HDR buffer
- *   2. glass transmittance multiplicative — tints and dims whatever is behind
- *   3. glass emission      additive — transmitted light plus surface sheen
- *   4. front edges         additive
- *   5. vertices            additive
- *   6. bloom               threshold + separable blur at 1/N resolution
- *   7. composite           exposure -> ACES -> sRGB, once, to the canvas
+ *   0. pane depth   depth only, so the rods can be split per pixel
+ *   1. rear edges   additive, into an offscreen HDR buffer
+ *   2. glass        into its own half-size pair of buffers, then softened
+ *                   and resolved over the frame
+ *   3. highlights   additive — the glass's surface reflections, kept sharp
+ *   4. front edges  additive
+ *   5. bloom        threshold + separable blur at 1/N resolution
+ *   6. composite    exposure -> ACES -> sRGB, once, to the canvas
  *
- * Multiplication commutes, so step 2 is order-independent by construction and
- * needs no sorting or weighted-blended OIT; addition commutes too, so step 3
- * is as well. Every pass below is a single batched draw call.
+ * Step 2 is order-independent transparency. The panes intersect each other in
+ * the projection and several of them share a centre depth exactly, so there is
+ * no draw order that is correct for all of them — and any sorted order jumps
+ * the moment two panes cross, which with opaque panes reads as a whole face
+ * changing colour in one frame. So nothing here is sorted. Instead each pane
+ * multiplies its transmittance into a `reveal` buffer and adds its colour,
+ * weighted by depth, into an `accum` buffer; both operations commute, and the
+ * resolve turns the two into a weighted average scaled by how much the stack
+ * hides. Panes trade influence continuously as they cross.
  *
- * The one approximation: because all absorption happens before all emission,
- * a rear face's glow is not dimmed by the glass in front of it. Doing that
- * exactly would mean interleaving the two passes per face in depth order, at
- * 48 draw calls instead of 2. The depth term in the face shader
- * (LOOK.glass.depthScatterFloor) stands in for it.
+ * Giving the glass its own buffers also gives it its own blur, which is what
+ * separates the soft frosted panes from the sharp edges drawn over them.
  */
 
 import { GLASS_F0, LOOK } from "./look.js";
@@ -31,16 +35,15 @@ import {
   capsuleFragmentShader,
   capsuleVertexShader,
   compositeFragmentShader,
+  copyFragmentShader,
   faceFragmentShader,
   faceVertexShader,
-  pointFragmentShader,
-  pointVertexShader,
+  glassCompositeFragmentShader,
   quadVertexShader,
 } from "./shaders.js";
 
-const FACE_STRIDE = 15;
-const CAPSULE_STRIDE = 10;
-const POINT_STRIDE = 6;
+const FACE_STRIDE = 17;
+const CAPSULE_STRIDE = 18;
 const QUAD_ORDER = [0, 1, 2, 0, 2, 3];
 const CAPSULE_ORDER = [0, 1, 2, 2, 1, 3];
 const FACE_UV = [
@@ -182,13 +185,14 @@ export function createRenderer(canvas) {
   const facePass = describeProgram(
     gl,
     createProgram(gl, faceVertexShader, faceFragmentShader),
-    ["a_pos3", "a_normal", "a_uv", "a_tint", "a_params"],
+    ["a_pos3", "a_tangent", "a_bitangent", "a_uv", "a_tint", "a_params"],
     [
       "u_center",
       "u_resolution",
       "u_scale",
       "u_z_distance",
       "u_camera",
+
       "u_light_position[0]",
       "u_light_position[1]",
       "u_light_color[0]",
@@ -207,21 +211,53 @@ export function createRenderer(canvas) {
       "u_exposure_scale",
       "u_sheen",
       "u_fresnel_rim",
+      "u_sweep_exponent",
+      "u_sweep",
+      "u_weight_floor",
+      "u_weight_curve",
     ],
   );
 
   const capsulePass = describeProgram(
     gl,
     createProgram(gl, capsuleVertexShader, capsuleFragmentShader),
-    ["a_position", "a_local", "a_half_size", "a_color"],
-    ["u_origin", "u_resolution", "u_pixel_ratio", "u_exposure_scale"],
+    ["a_position", "a_local", "a_half_size", "a_color", "a_glint", "a_depth", "a_tint"],
+    [
+      "u_origin",
+      "u_resolution",
+      "u_pixel_ratio",
+      "u_exposure_scale",
+      "u_f0",
+      "u_body_gain",
+      "u_flank_gain",
+      "u_glint_exponent",
+      "u_projected_radius",
+      "u_depth_bias",
+      "u_mode",
+      "u_density",
+      "u_radius",
+    ],
   );
 
-  const pointPass = describeProgram(
+  const copyPass = describeProgram(
     gl,
-    createProgram(gl, pointVertexShader, pointFragmentShader),
-    ["a_position", "a_local", "a_intensity", "a_radius"],
-    ["u_origin", "u_resolution", "u_pixel_ratio", "u_exposure_scale"],
+    createProgram(gl, quadVertexShader, copyFragmentShader),
+    ["a_position", "a_uv"],
+    ["u_texture"],
+  );
+
+  const glassCompositePass = describeProgram(
+    gl,
+    createProgram(gl, quadVertexShader, glassCompositeFragmentShader),
+    ["a_position", "a_uv"],
+    [
+      "u_backdrop",
+      "u_backdrop_soft",
+      "u_backdrop_deep",
+      "u_accum",
+      "u_reveal",
+      "u_frost_ramp",
+    ],
   );
 
   const brightPass = describeProgram(
@@ -258,7 +294,6 @@ export function createRenderer(canvas) {
 
   const faceBuffer = gl.createBuffer();
   const capsuleBuffer = gl.createBuffer();
-  const pointBuffer = gl.createBuffer();
   const quadBuffer = gl.createBuffer();
 
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
@@ -273,9 +308,14 @@ export function createRenderer(canvas) {
 
   const faceBatch = createBatch(24 * 6 * FACE_STRIDE);
   const capsuleBatch = createBatch(32 * 4 * 6 * CAPSULE_STRIDE);
-  const pointBatch = createBatch(16 * 6 * POINT_STRIDE);
 
-  function createTarget(type, filter) {
+  const depthBuffer = gl.createRenderbuffer();
+
+  /* Cleared if a driver refuses a depth attachment alongside a half-float
+     colour target. Everything still draws; the rods just stop being split. */
+  let depthSupported = true;
+
+  function createTarget(type, filter, withDepth = false) {
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
@@ -287,6 +327,7 @@ export function createRenderer(canvas) {
       texture,
       framebuffer: gl.createFramebuffer(),
       type,
+      withDepth,
       width: 0,
       height: 0,
     };
@@ -316,11 +357,48 @@ export function createRenderer(canvas) {
       0,
     );
 
+    if (target.withDepth && depthSupported) {
+      gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
+      gl.renderbufferStorage(
+        gl.RENDERBUFFER,
+        gl.DEPTH_COMPONENT16,
+        width,
+        height,
+      );
+      gl.framebufferRenderbuffer(
+        gl.FRAMEBUFFER,
+        gl.DEPTH_ATTACHMENT,
+        gl.RENDERBUFFER,
+        depthBuffer,
+      );
+
+      if (
+        gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE
+      ) {
+        gl.framebufferRenderbuffer(
+          gl.FRAMEBUFFER,
+          gl.DEPTH_ATTACHMENT,
+          gl.RENDERBUFFER,
+          null,
+        );
+        depthSupported = false;
+      }
+    }
+
     target.width = width;
     target.height = height;
   }
 
-  const sceneTarget = createTarget(hdrType, gl.LINEAR);
+  /* The two scene targets share one depth buffer: they swap when the glass is
+     composited, and the pane depths written before that have to survive into
+     the pass that draws the rods in front. */
+  let sceneTarget = createTarget(hdrType, gl.LINEAR, true);
+  let sceneScratch = createTarget(hdrType, gl.LINEAR, true);
+  const backdropSoft = createTarget(hdrType, gl.LINEAR);
+  const backdropDeep = createTarget(hdrType, gl.LINEAR);
+  const glassAccum = createTarget(hdrType, gl.LINEAR);
+  const glassReveal = createTarget(hdrType, gl.LINEAR);
+  const glassScratch = createTarget(hdrType, gl.LINEAR);
   const bloomTargetA = createTarget(hdrType, gl.LINEAR);
   const bloomTargetB = createTarget(hdrType, gl.LINEAR);
 
@@ -357,9 +435,9 @@ export function createRenderer(canvas) {
     );
   }
 
-  function clearBound() {
+  function clearBound(value = 0) {
     gl.disable(gl.BLEND);
-    gl.clearColor(0, 0, 0, 0);
+    gl.clearColor(value, value, value, value);
     gl.clear(gl.COLOR_BUFFER_BIT);
   }
 
@@ -425,9 +503,12 @@ export function createRenderer(canvas) {
         data[cursor++] = position[0];
         data[cursor++] = position[1];
         data[cursor++] = position[2];
-        data[cursor++] = face.normal[0];
-        data[cursor++] = face.normal[1];
-        data[cursor++] = face.normal[2];
+        data[cursor++] = face.tangent[0];
+        data[cursor++] = face.tangent[1];
+        data[cursor++] = face.tangent[2];
+        data[cursor++] = face.bitangent[0];
+        data[cursor++] = face.bitangent[1];
+        data[cursor++] = face.bitangent[2];
         data[cursor++] = uv[0];
         data[cursor++] = uv[1];
         data[cursor++] = face.tint[0];
@@ -436,7 +517,6 @@ export function createRenderer(canvas) {
         data[cursor++] = face.thickness;
         data[cursor++] = face.density;
         data[cursor++] = face.scatterGain;
-        data[cursor++] = face.rimGain;
       }
     }
 
@@ -482,39 +562,25 @@ export function createRenderer(canvas) {
         data[cursor++] = line.color[1];
         data[cursor++] = line.color[2];
         data[cursor++] = line.intensity;
+
+        // The rod's two ends carry different specular alignments; each corner
+        // takes the pair belonging to the end it sits at, and the fragment
+        // shader interpolates between them.
+        const end = localX < 0 ? line.glintStart : line.glintEnd;
+
+        data[cursor++] = end ? end[0][0] : 0;
+        data[cursor++] = end ? end[0][1] : 0;
+        data[cursor++] = end ? end[1][0] : 0;
+        data[cursor++] = end ? end[1][1] : 0;
+        data[cursor++] = localX < 0 ? line.z1 : line.z2;
+        data[cursor++] = line.tint[0];
+        data[cursor++] = line.tint[1];
+        data[cursor++] = line.tint[2];
       }
     }
 
     capsuleBatch.length = cursor;
     return cursor / CAPSULE_STRIDE;
-  }
-
-  function writePoints(vertices) {
-    ensureCapacity(pointBatch, vertices.length * 6 * POINT_STRIDE);
-    const data = pointBatch.data;
-    const corners = [
-      [-1, -1],
-      [1, -1],
-      [-1, 1],
-      [1, 1],
-    ];
-    let cursor = 0;
-
-    for (const vertex of vertices) {
-      for (const index of CAPSULE_ORDER) {
-        const [localX, localY] = corners[index];
-
-        data[cursor++] = vertex.x + localX * vertex.radius;
-        data[cursor++] = vertex.y + localY * vertex.radius;
-        data[cursor++] = localX;
-        data[cursor++] = localY;
-        data[cursor++] = vertex.intensity;
-        data[cursor++] = vertex.radius;
-      }
-    }
-
-    pointBatch.length = cursor;
-    return cursor / POINT_STRIDE;
   }
 
   /**
@@ -525,13 +591,10 @@ export function createRenderer(canvas) {
    * dispersion. Deriving the direction from geometry rather than from the edge
    * index is what makes the fringe read as a prism rather than as noise.
    */
-  function edgeLines(edges, passKey, dispersion) {
+  function edgeLines(edges, dispersion) {
     const lines = [];
 
     for (const edge of edges) {
-      const pass = edge[passKey];
-      if (pass <= 0.004) continue;
-
       for (const sample of dispersion) {
         const offsetX = edge.bendDirection[0] * sample.offset * edge.spread;
         const offsetY = edge.bendDirection[1] * sample.offset * edge.spread;
@@ -543,7 +606,12 @@ export function createRenderer(canvas) {
           y2: edge.y2 + offsetY,
           width: edge.coreWidth,
           color: sample.color,
-          intensity: edge.spectralStrength * pass,
+          intensity: edge.spectralStrength,
+          z1: edge.z1,
+          z2: edge.z2,
+          /* The dispersed copies are a fringe around the rod, not more glass,
+             so a white tint leaves them absorbing nothing. */
+          tint: [1, 1, 1],
         });
       }
 
@@ -554,7 +622,12 @@ export function createRenderer(canvas) {
         y2: edge.y2,
         width: edge.coreWidth * 0.5,
         color: edge.coreColor,
-        intensity: edge.coreIntensity * pass,
+        intensity: edge.coreIntensity,
+        glintStart: edge.glintStart,
+        glintEnd: edge.glintEnd,
+        z1: edge.z1,
+        z2: edge.z2,
+        tint: edge.tint,
       });
     }
 
@@ -565,11 +638,19 @@ export function createRenderer(canvas) {
   /* Passes                                                           */
   /* ---------------------------------------------------------------- */
 
-  function drawCapsules(lines, scene) {
-    if (!lines.length) return;
+  let capsuleVertexCount = 0;
 
-    const count = writeCapsules(lines);
-    uploadBatch(capsuleBuffer, capsuleBatch);
+  function uploadCapsules(lines) {
+    capsuleVertexCount = lines.length ? writeCapsules(lines) : 0;
+    if (capsuleVertexCount) uploadBatch(capsuleBuffer, capsuleBatch);
+  }
+
+  /** One batch of rods, in one of the two modes. */
+  function drawCapsules(scene, mode) {
+    const count = capsuleVertexCount;
+    if (!count) return;
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, capsuleBuffer);
     gl.useProgram(capsulePass.program);
     bindAttributes(
       capsulePass,
@@ -578,6 +659,9 @@ export function createRenderer(canvas) {
         ["a_local", 2],
         ["a_half_size", 2],
         ["a_color", 4],
+        ["a_glint", 4],
+        ["a_depth", 1],
+        ["a_tint", 3],
       ],
       CAPSULE_STRIDE,
     );
@@ -585,7 +669,27 @@ export function createRenderer(canvas) {
     gl.uniform2f(capsulePass.uniforms.u_resolution, scene.width, scene.height);
     gl.uniform1f(capsulePass.uniforms.u_pixel_ratio, pixelRatio);
     gl.uniform1f(capsulePass.uniforms.u_exposure_scale, exposureScale);
+    gl.uniform1f(capsulePass.uniforms.u_f0, GLASS_F0);
+    gl.uniform1f(capsulePass.uniforms.u_body_gain, LOOK.edges.bodyGain);
+    gl.uniform1f(capsulePass.uniforms.u_flank_gain, LOOK.edges.flankGain);
+    gl.uniform1f(
+      capsulePass.uniforms.u_glint_exponent,
+      LOOK.edges.glintExponent * 0.5,
+    );
+    gl.uniform1f(capsulePass.uniforms.u_projected_radius, scene.projectedRadius);
+    gl.uniform1f(capsulePass.uniforms.u_depth_bias, LOOK.edges.depthBias);
+    gl.uniform1f(capsulePass.uniforms.u_mode, mode);
+    gl.uniform1f(capsulePass.uniforms.u_density, LOOK.edges.density);
+    gl.uniform1f(capsulePass.uniforms.u_radius, LOOK.edges.radius);
     gl.drawArrays(gl.TRIANGLES, 0, count);
+  }
+
+  /** Absorb what is behind the rods, then add what they send towards the eye. */
+  function drawRods(scene) {
+    multiplicative();
+    drawCapsules(scene, 0);
+    additive();
+    drawCapsules(scene, 1);
   }
 
   // The two face passes share one upload: staged once, drawn twice.
@@ -597,8 +701,7 @@ export function createRenderer(canvas) {
   }
 
   function drawFaces(scene, mode) {
-    const count = faceVertexCount;
-    if (!count) return;
+    if (!faceVertexCount) return;
 
     gl.bindBuffer(gl.ARRAY_BUFFER, faceBuffer);
     gl.useProgram(facePass.program);
@@ -606,10 +709,11 @@ export function createRenderer(canvas) {
       facePass,
       [
         ["a_pos3", 3],
-        ["a_normal", 3],
+        ["a_tangent", 3],
+        ["a_bitangent", 3],
         ["a_uv", 2],
         ["a_tint", 3],
-        ["a_params", 4],
+        ["a_params", 3],
       ],
       FACE_STRIDE,
     );
@@ -644,7 +748,6 @@ export function createRenderer(canvas) {
       gl.uniform1f(uniforms[`u_light_intensity[${index}]`], light.intensity);
     });
 
-    gl.uniform1f(uniforms.u_mode, mode);
     gl.uniform1f(uniforms.u_f0, GLASS_F0);
     gl.uniform1f(uniforms.u_specular_exponent, glass.specularExponent);
     gl.uniform1f(uniforms.u_transmission_wrap, glass.transmissionWrap);
@@ -655,32 +758,14 @@ export function createRenderer(canvas) {
     gl.uniform1f(uniforms.u_rim_width, glass.rimWidth);
     gl.uniform1f(uniforms.u_sheen, glass.sheen);
     gl.uniform1f(uniforms.u_fresnel_rim, glass.fresnelRim);
+    gl.uniform1f(uniforms.u_sweep_exponent, glass.sweepExponent);
+    gl.uniform1f(uniforms.u_sweep, glass.sweep);
+    gl.uniform1f(uniforms.u_weight_floor, glass.weightFloor);
+    gl.uniform1f(uniforms.u_weight_curve, glass.weightCurve);
     gl.uniform1f(uniforms.u_exposure_scale, exposureScale);
+    gl.uniform1f(uniforms.u_mode, mode);
 
-    gl.drawArrays(gl.TRIANGLES, 0, count);
-  }
-
-  function drawPoints(scene) {
-    const count = writePoints(scene.vertices);
-    if (!count) return;
-
-    uploadBatch(pointBuffer, pointBatch);
-    gl.useProgram(pointPass.program);
-    bindAttributes(
-      pointPass,
-      [
-        ["a_position", 2],
-        ["a_local", 2],
-        ["a_intensity", 1],
-        ["a_radius", 1],
-      ],
-      POINT_STRIDE,
-    );
-    gl.uniform2f(pointPass.uniforms.u_origin, 0, 0);
-    gl.uniform2f(pointPass.uniforms.u_resolution, scene.width, scene.height);
-    gl.uniform1f(pointPass.uniforms.u_pixel_ratio, pixelRatio);
-    gl.uniform1f(pointPass.uniforms.u_exposure_scale, exposureScale);
-    gl.drawArrays(gl.TRIANGLES, 0, count);
+    gl.drawArrays(gl.TRIANGLES, 0, faceVertexCount);
   }
 
   function drawFullscreen(pass) {
@@ -695,6 +780,98 @@ export function createRenderer(canvas) {
       4,
     );
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  /** Separable Gaussian, in place, using `scratch` as the ping-pong buffer. */
+  function blurInPlace(target, scratch, sigma) {
+    if (sigma <= 0.01) return;
+
+    const spacing = sigma / 1.637;
+    resizeTarget(scratch, target.width, target.height);
+
+    for (const horizontal of [true, false]) {
+      const source = horizontal ? target : scratch;
+      const destination = horizontal ? scratch : target;
+
+      bindTarget(destination);
+      clearBound();
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, source.texture);
+      gl.useProgram(blurPass.program);
+      gl.uniform1i(blurPass.uniforms.u_texture, 0);
+      gl.uniform2f(
+        blurPass.uniforms.u_step,
+        horizontal ? spacing / target.width : 0,
+        horizontal ? 0 : spacing / target.height,
+      );
+      drawFullscreen(blurPass);
+    }
+  }
+
+  /**
+   * The glass layer: transmittance into one buffer, weighted colour into the
+   * other, both softened, neither depending on the order the panes were drawn.
+   */
+  function renderGlass(scene) {
+    const glass = LOOK.glass;
+    const width = Math.max(Math.floor(canvas.width / glass.softDownscale), 1);
+    const height = Math.max(Math.floor(canvas.height / glass.softDownscale), 1);
+
+    resizeTarget(glassAccum, width, height);
+    resizeTarget(glassReveal, width, height);
+
+    // Starts at full transmission, and every pane multiplies its own in.
+    bindTarget(glassReveal);
+    clearBound(1);
+    multiplicative();
+    drawFaces(scene, 0);
+
+    bindTarget(glassAccum);
+    clearBound();
+    additive();
+    drawFaces(scene, 1);
+
+    blurInPlace(glassAccum, glassScratch, glass.softness);
+    blurInPlace(glassReveal, glassScratch, glass.softness);
+
+    // Two softened copies of everything already drawn: one pane's worth of
+    // scattering, and what a thick stack does. The composite reads the
+    // accumulated optical depth and picks between them.
+    resizeTarget(backdropSoft, width, height);
+    resizeTarget(backdropDeep, width, height);
+
+    bindTarget(backdropSoft);
+    clearBound();
+    gl.disable(gl.BLEND);
+    drawTexture(copyPass, "u_texture", sceneTarget.texture);
+    blurInPlace(backdropSoft, glassScratch, glass.frost);
+
+    bindTarget(backdropDeep);
+    clearBound();
+    gl.disable(gl.BLEND);
+    drawTexture(copyPass, "u_texture", backdropSoft.texture);
+    blurInPlace(
+      backdropDeep,
+      glassScratch,
+      Math.sqrt(Math.max(glass.frostDeep ** 2 - glass.frost ** 2, 0)),
+    );
+  }
+
+  function bindTextures(pass, entries) {
+    entries.forEach(([uniform, texture], unit) => {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.uniform1i(pass.uniforms[uniform], unit);
+    });
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  function drawTexture(pass, uniform, texture) {
+    gl.useProgram(pass.program);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.uniform1i(pass.uniforms[uniform], 0);
+    drawFullscreen(pass);
   }
 
   function renderBloom(enabled) {
@@ -721,25 +898,7 @@ export function createRenderer(canvas) {
     gl.uniform1f(brightPass.uniforms.u_knee, bloom.knee);
     drawFullscreen(brightPass);
 
-    const spacing = (bloom.sigma / bloom.downscale) / 1.637;
-
-    for (const horizontal of [true, false]) {
-      const source = horizontal ? bloomTargetA : bloomTargetB;
-      const destination = horizontal ? bloomTargetB : bloomTargetA;
-
-      bindTarget(destination);
-      clearBound();
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, source.texture);
-      gl.useProgram(blurPass.program);
-      gl.uniform1i(blurPass.uniforms.u_texture, 0);
-      gl.uniform2f(
-        blurPass.uniforms.u_step,
-        horizontal ? spacing / width : 0,
-        horizontal ? 0 : spacing / height,
-      );
-      drawFullscreen(blurPass);
-    }
+    blurInPlace(bloomTargetA, bloomTargetB, bloom.sigma / bloom.downscale);
   }
 
   function resize(scene) {
@@ -766,6 +925,7 @@ export function createRenderer(canvas) {
     canvas.width = width;
     canvas.height = height;
     resizeTarget(sceneTarget, width, height);
+    resizeTarget(sceneScratch, width, height);
   }
 
   function render(scene) {
@@ -774,19 +934,78 @@ export function createRenderer(canvas) {
     const dispersion = scene.dispersion;
 
     bindTarget(sceneTarget);
-    clearBound();
-
-    additive();
-    drawCapsules(edgeLines(scene.edges, "rearPass", dispersion), scene);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clearDepth(1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     uploadFaces(scene);
-    multiplicative();
-    drawFaces(scene, 0);
 
+    if (depthSupported) {
+      // Depth only: where the nearest pane is, at every pixel. Nothing is
+      // drawn here — the colour mask is off — and this is the whole reason
+      // the rods can be split correctly. A rod runs from deep inside the
+      // object out to the front, so no single depth for the whole rod can say
+      // which side of the glass it belongs on. The depth buffer answers per
+      // pixel instead.
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LESS);
+      gl.colorMask(false, false, false, false);
+      drawFaces(scene, 0);
+      gl.colorMask(true, true, true, true);
+      gl.depthMask(false);
+
+      // The parts of every rod behind the glass. They land in the backdrop,
+      // so the glass dims and frosts them along with everything else.
+      gl.depthFunc(gl.GREATER);
+      uploadCapsules(edgeLines(scene.edges, dispersion));
+      drawRods(scene);
+      gl.disable(gl.DEPTH_TEST);
+    }
+
+    gl.depthMask(false);
+    renderGlass(scene);
+
+    // Lay the glass over the backdrop, scattering it as it goes. This reads
+    // the frame it is replacing, so it writes into the spare target and the
+    // two swap.
+    bindTarget(sceneScratch);
+    clearBound();
+    gl.disable(gl.BLEND);
+    gl.useProgram(glassCompositePass.program);
+    bindTextures(glassCompositePass, [
+      ["u_backdrop", sceneTarget.texture],
+      ["u_backdrop_soft", backdropSoft.texture],
+      ["u_backdrop_deep", backdropDeep.texture],
+      ["u_accum", glassAccum.texture],
+      ["u_reveal", glassReveal.texture],
+    ]);
+    gl.uniform1f(
+      glassCompositePass.uniforms.u_frost_ramp,
+      LOOK.glass.frostRamp,
+    );
+    drawFullscreen(glassCompositePass);
+
+    const spare = sceneTarget;
+    sceneTarget = sceneScratch;
+    sceneScratch = spare;
+
+    bindTarget(sceneTarget);
     additive();
-    drawFaces(scene, 1);
-    drawCapsules(edgeLines(scene.edges, "frontPass", dispersion), scene);
-    drawPoints(scene);
+    drawFaces(scene, 2);
+
+    // ... and the parts in front of it, against the same depths. The two
+    // tests are complementary, so between them every rod is drawn exactly
+    // once and the two halves meet without a seam.
+    if (depthSupported) {
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LESS);
+    }
+
+    uploadCapsules(edgeLines(scene.edges, dispersion));
+    drawRods(scene);
+    gl.disable(gl.DEPTH_TEST);
 
     renderBloom(scene.width >= LOOK.quality.bloomMinWidth);
 
@@ -815,11 +1034,23 @@ export function createRenderer(canvas) {
   }
 
   function destroy() {
-    for (const buffer of [faceBuffer, capsuleBuffer, pointBuffer, quadBuffer]) {
+    for (const buffer of [faceBuffer, capsuleBuffer, quadBuffer]) {
       gl.deleteBuffer(buffer);
     }
 
-    for (const target of [sceneTarget, bloomTargetA, bloomTargetB]) {
+    gl.deleteRenderbuffer(depthBuffer);
+
+    for (const target of [
+      sceneTarget,
+      sceneScratch,
+      backdropSoft,
+      backdropDeep,
+      glassAccum,
+      glassReveal,
+      glassScratch,
+      bloomTargetA,
+      bloomTargetB,
+    ]) {
       gl.deleteTexture(target.texture);
       gl.deleteFramebuffer(target.framebuffer);
     }
@@ -827,7 +1058,8 @@ export function createRenderer(canvas) {
     for (const pass of [
       facePass,
       capsulePass,
-      pointPass,
+      copyPass,
+      glassCompositePass,
       brightPass,
       blurPass,
       compositePass,

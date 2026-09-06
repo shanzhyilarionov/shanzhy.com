@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import styles from "./navigation.module.css";
@@ -25,10 +25,20 @@ export default function Navigation({
   const [closeMotion, setCloseMotion] = useState("");
   const [pendingHref, setPendingHref] = useState(null);
 
-  useEffect(() => {
+  /**
+   * Opening or closing the drawer clears whatever close was in flight.
+   *
+   * Comparing against the previous prop during render is React's documented
+   * alternative to resetting state from an effect: the adjustment happens in
+   * the same pass, so nothing is ever painted with the stale value.
+   */
+  const [wasOpen, setWasOpen] = useState(open);
+
+  if (wasOpen !== open) {
+    setWasOpen(open);
     setClosing(false);
     setPendingHref(null);
-  }, [open]);
+  }
 
   const handleClose = () => {
     if (!open || closing) {

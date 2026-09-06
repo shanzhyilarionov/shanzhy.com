@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Navigation from "./navigation";
@@ -81,12 +81,19 @@ export default function Header({ children }) {
     };
   }, []);
 
-  useLayoutEffect(() => {
-    if (!pendingTransition || pathname !== pendingTransition.href) {
-      return;
-    }
+  /**
+   * The router has arrived where we asked it to go, so the transition is over.
+   *
+   * This is done during render rather than in a layout effect. React finishes
+   * the re-render before the browser paints either way, which is the guarantee
+   * the layout effect was there for — but doing it here means there is no
+   * frame in which the new route is mounted while the old transition state is
+   * still on screen. The condition clears `pendingTransition`, so it settles
+   * after one extra pass.
+   */
+  if (pendingTransition && pathname === pendingTransition.href) {
+    const { source } = pendingTransition;
 
-    const source = pendingTransition.source;
     setPendingTransition(null);
     setContentMotion("enter");
 
@@ -97,7 +104,7 @@ export default function Header({ children }) {
     } else {
       setHeaderMotion("idle");
     }
-  }, [pathname, pendingTransition]);
+  }
 
   const startHeaderNavigation = (href) => {
     if (href === pathname || pendingTransition) {

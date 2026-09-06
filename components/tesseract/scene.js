@@ -16,6 +16,7 @@ import {
   clamp,
   cross3D,
   dot3D,
+  length3D,
   dot4D,
   faceNormal4D,
   frontness,
@@ -57,6 +58,31 @@ function layoutScale(width, height) {
   );
 }
 
+/**
+ * How much glass a pane is made of, relative to a pane of the undistorted
+ * tesseract.
+ *
+ * Every pane shared one thickness before this, which made the accumulated
+ * optical depth a fiction: the 4D projection stretches the cell nearest the
+ * eye point in w and squeezes the far one, so the panes genuinely differ in
+ * size by about a factor of two, and a pane twice as wide is twice as thick.
+ * Taking the square root of the quad's own area in 3D gets that from the
+ * geometry itself, without needing the 4D coordinates back, and it follows
+ * every distortion the projection applies rather than only the w scale.
+ *
+ * The reference is the undistorted face: edge 2, so area 4, so span 2.
+ */
+function paneSpan(points3D) {
+  const first = subtract3D(points3D[1], points3D[0]);
+  const second = subtract3D(points3D[2], points3D[0]);
+  const third = subtract3D(points3D[3], points3D[0]);
+  const area =
+    0.5 *
+    (length3D(cross3D(first, second)) + length3D(cross3D(second, third)));
+
+  return Math.sqrt(area) / 2;
+}
+
 /** Radiance arriving at a point from one light, with inverse-square falloff. */
 function lightSample(light, point) {
   const toLight = subtract3D(light.position, point);
@@ -81,6 +107,35 @@ function lightSample(light, point) {
 function tangentSin(tangent, direction) {
   const alignment = dot3D(tangent, direction);
   return Math.sqrt(Math.max(0, 1 - alignment * alignment));
+}
+
+/**
+ * The two numbers a rod's travelling highlight needs at one of its ends.
+ *
+ * `alignment` is T.H there — the Kajiya-Kay specular condition for a cylinder
+ * is that the half-vector stands perpendicular to the tangent, so the
+ * highlight sits wherever this crosses zero. Handing the ends to the shader
+ * and letting it interpolate puts the bright spot exactly at that crossing,
+ * per pixel, and moves it as smoothly as the geometry moves.
+ *
+ * Solving for the crossing on the CPU instead — or worse, sampling a handful
+ * of points and keeping the best — gives one position for the whole rod, and
+ * that position has to jump when the crossing leaves the segment through one
+ * end and re-enters through the other.
+ */
+function glintAtEnd(point, tangent, light, camera) {
+  const sample = lightSample(light, point);
+  const toEye = normalize3D(subtract3D(camera, point));
+  const half = normalize3D([
+    sample.direction[0] + toEye[0],
+    sample.direction[1] + toEye[1],
+    sample.direction[2] + toEye[2],
+  ]);
+
+  return {
+    alignment: dot3D(tangent, half),
+    weight: sample.attenuation,
+  };
 }
 
 function schlick(cosTheta, f0) {
@@ -154,20 +209,34 @@ export function createScene(
   /* Faces                                                            */
   /* ---------------------------------------------------------------- */
 
+  /* A rod is made of the same glass as the panes it joins, so it absorbs in
+     their colour. Collected while the faces are built: each face hands its
+     tint to the four tesseract edges its boundary runs along. */
+  const edgeKey = (first, second) =>
+    first < second ? `${first},${second}` : `${second},${first}`;
+  const edgeIndexByPair = new Map(
+    sourceEdges.map(([first, second], index) => [edgeKey(first, second), index]),
+  );
+  const edgeTints = sourceEdges.map(() => [0, 0, 0, 0]);
+
   const fourD = LOOK.fourD;
   const faces = sourceFaces.map((face) => {
     const points3D = face.corners.map(
       (vertexIndex) => projectedVertices[vertexIndex].point3D,
     );
     const center3D = average3D(points3D);
-    const firstSide = subtract3D(points3D[1], points3D[0]);
-    const secondSide = subtract3D(points3D[3], points3D[0]);
     const viewDirection = normalize3D(subtract3D(camera, center3D));
-    const geometricNormal = normalize3D(cross3D(firstSide, secondSide));
-    const normal =
-      dot3D(geometricNormal, viewDirection) >= 0
-        ? geometricNormal
-        : geometricNormal.map((value) => -value);
+
+    /* The pane's own axes, along +u and +v. The shader builds the normal from
+       their cross product and bends it towards whichever boundary is nearest,
+       so it needs the axes rather than a normal. They are handed over already
+       oriented so that cross(tangent, bitangent) faces the viewer. */
+    const tangent = normalize3D(subtract3D(points3D[1], points3D[0]));
+    let bitangent = normalize3D(subtract3D(points3D[3], points3D[0]));
+
+    if (dot3D(cross3D(tangent, bitangent), viewDirection) < 0) {
+      bitangent = bitangent.map((value) => -value);
+    }
 
     /* How the face is turned in 4D, independent of the 3D projection. */
     const rotatedNormal4D = rotateAll4D(faceNormal4D(face), rotations);
@@ -180,32 +249,46 @@ export function createScene(
 
     const isTinted = face.cellLayer >= 0;
     const glass = LOOK.glass;
+    const tint = faceTint(face.cellLayer, face.orientationIndex);
+
+    for (let corner = 0; corner < 4; corner++) {
+      const index = edgeIndexByPair.get(
+        edgeKey(face.corners[corner], face.corners[(corner + 1) % 4]),
+      );
+
+      if (index === undefined) continue;
+
+      const slot = edgeTints[index];
+      slot[0] += tint[0];
+      slot[1] += tint[1];
+      slot[2] += tint[2];
+      slot[3] += 1;
+    }
 
     return {
       points3D,
-      center3D,
-      normal,
-      tint: faceTint(face.cellLayer, face.orientationIndex),
-      thickness: glass.thickness,
+      tangent,
+      bitangent,
+      tint,
+      thickness: glass.thickness * paneSpan(points3D),
       density: isTinted ? glass.tintedDensity : glass.structuralDensity,
       scatterGain:
         (isTinted ? glass.scatterTinted : glass.scatterStructural) * fourDGain,
-      rimGain: glass.rimGain * (isTinted ? 1 : 1.45),
-      depth: center3D[2],
-      points2D: face.corners.map(
-        (vertexIndex) => projectedVertices[vertexIndex],
-      ),
     };
   });
 
-  faces.sort((first, second) => first.depth - second.depth);
+  /* Faces are deliberately not sorted: the renderer composites them
+     order-independently, because several of them share a centre depth
+     exactly and any order that swaps mid-rotation shows up as a pane
+     changing colour in a single frame. */
 
   /* ---------------------------------------------------------------- */
   /* Edges                                                            */
   /* ---------------------------------------------------------------- */
 
   const edgeLook = LOOK.edges;
-  const edges = sourceEdges.map(([firstIndex, secondIndex]) => {
+
+  const edges = sourceEdges.map(([firstIndex, secondIndex], edgeIndex) => {
     const first = projectedVertices[firstIndex];
     const second = projectedVertices[secondIndex];
     const deltaX = second.x - first.x;
@@ -268,6 +351,25 @@ export function createScene(
       bendY += normalY * side * sample.attenuation;
     }
 
+    /* The travelling highlight, as the shader wants it: T.H and a brightness
+       at each end of the rod, for each light. The eye and the lights are at
+       finite distance, so these differ end to end, and where the interpolated
+       T.H crosses zero is where the highlight lands. */
+    const glintGain = edgeLook.glintIntensity * depthGain;
+
+    const glint = LOOK.lights.map((light) => [
+      glintAtEnd(first.point3D, tangent, light, camera),
+      glintAtEnd(second.point3D, tangent, light, camera),
+    ]);
+    const glintStart = glint.map(([near]) => [
+      near.alignment,
+      near.weight * glintGain,
+    ]);
+    const glintEnd = glint.map(([, far]) => [
+      far.alignment,
+      far.weight * glintGain,
+    ]);
+
     const bendLength = Math.max(Math.hypot(bendX, bendY), 1e-4);
     const bendDirection = [bendX / bendLength, bendY / bendLength];
     const perspective = (first.perspective + second.perspective) * 0.5;
@@ -276,7 +378,6 @@ export function createScene(
       edgeLook.minWidth,
       edgeLook.maxWidth,
     );
-    const frontPass = 0.32 + smoothstep(0.25, 0.76, front) * 0.68;
     const spectralStrength =
       (0.25 + clamp(specular * 0.5, 0, 1) * 0.75) * depthGain;
 
@@ -292,30 +393,28 @@ export function createScene(
       coreColor: radiance,
       coreIntensity: edgeLook.coreIntensity * depthGain,
       spectralStrength: edgeLook.dispersionIntensity * spectralStrength,
+      glintStart,
+      glintEnd,
       spread: edgeLook.dispersionSpread * (0.6 + clamp(diffuse, 0, 1) * 0.9),
       depth,
-      frontPass,
-      rearPass: 1 - frontPass,
+      /* The rod's depth at each end. The renderer turns these into a real
+         clip-space z so the depth buffer can decide, per pixel, which parts
+         of the rod are behind the glass and which are in front. */
+      z1: first.point3D[2],
+      z2: second.point3D[2],
+      /* The glass this rod is made of, averaged over the panes that meet
+         along it. Without a tint the rod could only add light; with one it
+         absorbs like the rest of the object, which is what stops an edge
+         reading as more transparent than the faces it joins. */
+      tint: [
+        edgeTints[edgeIndex][0] / Math.max(edgeTints[edgeIndex][3], 1),
+        edgeTints[edgeIndex][1] / Math.max(edgeTints[edgeIndex][3], 1),
+        edgeTints[edgeIndex][2] / Math.max(edgeTints[edgeIndex][3], 1),
+      ],
     };
   });
 
   edges.sort((first, second) => first.depth - second.depth);
-
-  /* ---------------------------------------------------------------- */
-  /* Vertices                                                         */
-  /* ---------------------------------------------------------------- */
-
-  const vertices = projectedVertices.map((vertex) => {
-    const front = frontness(vertex.point3D[2]);
-    const depthCurve = front ** 1.55;
-
-    return {
-      x: vertex.x,
-      y: vertex.y,
-      radius: LOOK.vertices.radius * (0.42 + depthCurve * 0.58),
-      intensity: LOOK.vertices.intensity * (0.08 + depthCurve * 0.92),
-    };
-  });
 
   return {
     width,
@@ -326,7 +425,6 @@ export function createScene(
     camera,
     faces,
     edges,
-    vertices,
     dispersion: DISPERSION.map((entry) => ({
       color: entry.color,
       offset: LOOK.edges.dispersionOffsets[entry.key],
