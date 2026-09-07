@@ -28,9 +28,15 @@
   animation: fadeIn var(--motion-content) ease-out var(--motion-content) both;
 }
 
+/* Only Works gives its resting Menu control a longer page-entry fade. */
+.worksMenuEntering {
+  animation: fadeIn 1s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .contentEntering,
-  .chromeEntering {
+  .chromeEntering,
+  .worksMenuEntering {
     animation: none;
   }
 }

@@ -11,7 +11,7 @@ import styles from "./shell.module.css";
 /* Mirrors --motion-panel, --motion-content and --motion-overlap in globals.css. */
 const PANEL_MS = 1000;
 const CONTENT_MS = 500;
-const OVERLAP_MS = 200;
+const OVERLAP_MS = 300;
 
 /** How long a close takes, contents and panel together. */
 const closeMs = (slide) =>
@@ -26,6 +26,7 @@ export default function Shell({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const isHome = pathname === "/";
+  const isWorks = pathname === "/works";
 
   /**
    * The site has exactly one route transition, and it runs through the
@@ -167,16 +168,20 @@ export default function Shell({ children }) {
             .join(" ")}
           left={isHome ? <HomeTitle key={pathname} /> : <Brand />}
           right={
-            <RollingText
-              /* On the way home the new label waits for the title. */
-              style={{ "--label-delay": `${enterDelay}ms` }}
-              type="button"
-              label={chromeLabel}
-              aria-label={
-                chromeLabel === "Close" ? "Close navigation" : "Open navigation"
-              }
-              onClick={toggleNavigation}
-            />
+            <span className={isWorks ? styles.worksMenuEntering : ""}>
+              <RollingText
+                /* On the way home the new label waits for the title. */
+                style={{ "--label-delay": `${enterDelay}ms` }}
+                type="button"
+                label={chromeLabel}
+                aria-label={
+                  chromeLabel === "Close"
+                    ? "Close navigation"
+                    : "Open navigation"
+                }
+                onClick={toggleNavigation}
+              />
+            </span>
           }
         />
 
@@ -184,7 +189,9 @@ export default function Shell({ children }) {
           className={[
             styles.content,
             /* Home and contact animate their own contents in instead. */
-            isHome || pathname === "/contact" ? "" : styles.contentEntering,
+            isHome || isWorks || pathname === "/contact"
+              ? ""
+              : styles.contentEntering,
           ]
             .filter(Boolean)
             .join(" ")}

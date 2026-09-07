@@ -25,7 +25,7 @@
    */
   --motion-panel: 1s;
   --motion-content: 0.5s;
-  --motion-overlap: 0.2s;
+  --motion-overlap: 0.3s;
 
   /*
    * A curve that starts or ends at speed would leave a visible seam where one

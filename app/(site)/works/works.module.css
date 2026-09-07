@@ -1,0 +1,110 @@
+.page {
+  display: grid;
+  width: 100vw;
+  min-height: 100svh;
+  place-items: center;
+  overflow: hidden;
+}
+
+.projects {
+  --tile-size: clamp(9rem, 14vw, 18rem);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(0.75rem, 1.5vw, 2rem);
+  width: 100%;
+}
+
+.project {
+  position: relative;
+  flex: 0 0 var(--tile-size);
+  min-width: 0;
+  transition: flex-basis 0.5s var(--ease-content);
+}
+
+.reveal {
+  overflow: hidden;
+  animation: revealUp var(--reveal-duration) var(--ease-panel) both;
+}
+
+.revealContent {
+  animation: contentUp var(--reveal-duration) var(--ease-panel) both;
+}
+
+.imageFrame {
+  position: relative;
+  width: 100%;
+  height: var(--tile-size);
+  overflow: hidden;
+}
+
+.image {
+  object-fit: cover;
+}
+
+.title {
+  position: absolute;
+  top: calc(var(--tile-size) + 0.75rem);
+  left: 0;
+  width: 100%;
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hoverEnabled .project:hover {
+    flex-basis: calc(var(--tile-size) * 1.6);
+  }
+
+  .hoverEnabled .project:hover .title {
+    opacity: 1;
+    transition-delay: 0.3s;
+  }
+}
+
+.resizing .project {
+  transition: none;
+}
+
+@media (max-width: 768px) {
+  .projects {
+    --tile-size: 22vw;
+    gap: 2vw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project,
+  .reveal,
+  .revealContent,
+  .title {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes revealUp {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes contentUp {
+  from {
+    transform: translate3d(0, -100%, 0);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
