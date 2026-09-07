@@ -1,0 +1,56 @@
+/* A holder for --enter-delay, nothing more: it must not affect layout. */
+.shell {
+  display: contents;
+}
+
+.content {
+  width: 100%;
+  min-height: 100svh;
+}
+
+/* Above the panel, which comes and goes without disturbing it. */
+.chromeAbovePanel {
+  z-index: 200;
+}
+
+/* Over home it would be white on white, so it stays under the panel instead. */
+.chromeOnDark {
+  color: #FFFFFF;
+}
+
+.contentEntering {
+  animation: contentEnter var(--motion-content) ease-out both;
+}
+
+/* First paint on home only: the chrome arrives with the title and the
+   tesseract. Everywhere else it is simply there, and stays there. */
+.chromeEntering {
+  animation: fadeIn var(--motion-content) ease-out var(--motion-content) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contentEntering,
+  .chromeEntering {
+    animation: none;
+  }
+}
+
+@keyframes contentEnter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}

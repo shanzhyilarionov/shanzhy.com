@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import RollingText from "../../../components/rolling-text";
 import styles from "./contact.module.css";
 
 const email = "shangzh5@ualberta.ca";
@@ -20,104 +21,22 @@ const socialLinks = [
   },
 ];
 
-function RollingLabel({ label, onAnimationEnd }) {
-  return (
-    <span className={styles.labelMask} aria-hidden="true">
-      <span className={styles.labelTrack} onAnimationEnd={onAnimationEnd}>
-        <span className={styles.labelLine}>{label}</span>
-        <span className={styles.labelLine}>{label}</span>
-        <span className={styles.labelLine}>{label}</span>
-      </span>
-    </span>
-  );
-}
-
-function RollingLink({ href, label }) {
-  const [motion, setMotion] = useState("");
-
-  const className = [
-    styles.contactLink,
-    motion === "enter" ? styles.rollEnter : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <a
-      className={className}
-      href={href}
-      aria-label={label}
-      target="_blank"
-      rel="noreferrer"
-      onPointerEnter={(event) => {
-        if (event.pointerType === "mouse") {
-          setMotion("enter");
-        }
-      }}
-    >
-      <RollingLabel
-        label={label}
-        onAnimationEnd={() => {
-          if (motion === "enter") {
-            setMotion("");
-          }
-        }}
-      />
-    </a>
-  );
-}
-
-function CopyEmailButton({ copied, onCopy }) {
-  const [motion, setMotion] = useState("");
-
-  const className = [
-    styles.contactLink,
-    styles.emailButton,
-    motion === "enter" ? styles.rollEnter : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <button
-      className={className}
-      type="button"
-      aria-label={copied ? "Email copied" : `Copy ${email}`}
-      onClick={onCopy}
-      onPointerEnter={(event) => {
-        if (event.pointerType === "mouse") {
-          setMotion("enter");
-        }
-      }}
-    >
-      <RollingLabel
-        label={email}
-        onAnimationEnd={() => {
-          if (motion === "enter") {
-            setMotion("");
-          }
-        }}
-      />
-    </button>
-  );
-}
-
-function RevealItem({ children, index, feedback = null }) {
-  const duration = (socialLinks.length + 2 - index) * 100;
-  const enterDelay = 500 - duration;
+/**
+ * One line of the list, rising into place. The lines are staggered so that
+ * they all settle together: the bottom one starts first and takes the longest.
+ */
+function Reveal({ index, children }) {
+  const duration = (index + 2) * 100;
 
   return (
     <div
-      className={styles.contactItem}
+      className={styles.item}
       style={{
-        "--item-duration": `${duration}ms`,
-        "--enter-delay": `${enterDelay}ms`,
+        "--duration": `${duration}ms`,
+        "--delay": `${500 - duration}ms`,
       }}
     >
-      <div className={styles.revealClip}>
-        <div className={styles.revealContent}>{children}</div>
-      </div>
-      {feedback}
+      {children}
     </div>
   );
 }
@@ -174,30 +93,34 @@ export default function Contact() {
 
   return (
     <main className={styles.contactPage}>
-      <section className={styles.contactContent} aria-label="Contact information">
-        <RevealItem
-          index={0}
-          feedback={
-            <span
-              className={[
-                styles.copiedMessage,
-                copied ? styles.copiedMessageVisible : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-hidden={!copied}
-            >
-              Copied!
-            </span>
-          }
-        >
-          <CopyEmailButton copied={copied} onCopy={copyEmail} />
-        </RevealItem>
+      <section className={styles.content} aria-label="Contact information">
+        <Reveal index={0}>
+          <RollingText
+            type="button"
+            label={email}
+            aria-label={copied ? "Email copied" : `Copy ${email}`}
+            onClick={copyEmail}
+          />
+          <span
+            className={[styles.copied, copied ? styles.copiedVisible : ""]
+              .filter(Boolean)
+              .join(" ")}
+            aria-hidden={!copied}
+          >
+            Copied!
+          </span>
+        </Reveal>
 
         {socialLinks.map((link, index) => (
-          <RevealItem index={index + 1} key={link.label}>
-            <RollingLink {...link} />
-          </RevealItem>
+          <Reveal index={index + 1} key={link.label}>
+            <RollingText
+              as="a"
+              href={link.href}
+              label={link.label}
+              target="_blank"
+              rel="noreferrer"
+            />
+          </Reveal>
         ))}
       </section>
     </main>

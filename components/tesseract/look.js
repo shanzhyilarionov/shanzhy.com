@@ -60,7 +60,7 @@ export const LOOK = {
     thickness: 0.34,
     /* Extinction density multiplier for the tinted cells. Higher = the pane
        hides more of what is behind it, and its own colour reads more solid. */
-    tintedDensity: 7.0,
+    tintedDensity: 5.0,
     /* ... and for the neutral structural glass, which stays deliberately
        clear: it has almost no colour of its own, so making it opaque would
        only punch black holes through the object. */
@@ -102,8 +102,8 @@ export const LOOK = {
        thick stack lands; `frostRamp` scales the accumulated optical depth
        that blends between them, so a single pane stays nearly readable and
        several stacked ones do not. */
-    frost: 2.0,
-    frostDeep: 6.5,
+    frost: 1.5,
+    frostDeep: 5.0,
     frostRamp: 0.5,
   },
 

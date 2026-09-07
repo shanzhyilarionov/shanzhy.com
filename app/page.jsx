@@ -7,27 +7,13 @@ const Tesseract = dynamic(() => import("../components/tesseract"), {
   ssr: false,
 });
 
+/* The title and the button on this page belong to the shell's chrome, which
+   outlives the route; all that is left here is the object itself. */
 export default function Page() {
   return (
     <main className={styles.home}>
       <div className={styles.tesseractLayer}>
         <Tesseract />
-      </div>
-
-      <div className={styles.homeIdentity}>
-        <h1 className={styles.homeTitle} aria-label="Shanzhy">
-          {"Shanzhy".split("").map((letter, index) => (
-            <span
-              className={styles.titleLetterMask}
-              aria-hidden="true"
-              key={index}
-            >
-              <span className={styles.titleLetter}>{letter}</span>
-            </span>
-          ))}
-        </h1>
-
-        <p className={styles.homeRole}>Independent Developer</p>
       </div>
     </main>
   );

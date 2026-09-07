@@ -2,164 +2,272 @@
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: #000000;
-  color: #FFFFFF;
-  transform: translate3d(0, -100%, 0);
-  transition: transform 0.8s cubic-bezier(0.8, 0, 0.2, 1);
+  background: #FFFFFF;
+  color: #000000;
+  /*
+   * The panel is a mask, not a moving page: the box travels and `.stage`
+   * inside it travels exactly as far the other way, so the wordmark, the
+   * button and the labels hold still while an edge sweeps across them.
+   *
+   * `clip-path` would say this more directly, and it is what this used to do —
+   * but a minifier shortens `inset(0 0 0 0)` to `inset(0)`, and browsers do
+   * not interpolate that against a four-value inset. The animation silently
+   * became a jump to the end state, which read as the panel appearing all at
+   * once. Two cancelling transforms have no such edge, and stay on the
+   * compositor besides.
+   */
+  overflow: hidden;
+  transform: translate3d(0, 100%, 0);
   visibility: hidden;
   pointer-events: none;
+
+  /* Each leg starts `--motion-overlap` before the one before it ends. */
+  --panel-lead: calc(var(--enter-leg) - var(--motion-overlap));
+  --content-lead: calc(var(--motion-content) - var(--motion-overlap));
+}
+
+/*
+ * Over home the panel is white against black, so an edge has to sweep across:
+ * up from the bottom to uncover it, up past the top to take it away. Over any
+ * other page it is white against white, so it only fades — which is what the
+ * page underneath fading out in place looks like.
+ */
+.enterSlide {
+  --enter-leg: var(--motion-panel);
+}
+
+.enterFade {
+  --enter-leg: var(--motion-content);
+}
+
+.exitSlide {
+  --exit-leg: var(--motion-panel);
+}
+
+.exitFade {
+  --exit-leg: var(--motion-content);
 }
 
 .open {
-  transform: translate3d(0, 0, 0);
   visibility: visible;
   pointer-events: auto;
+  transform: translate3d(0, 0, 0);
 }
 
-.open.closing {
+/* Everything the panel carries rides here, held still against its travel. */
+.stage {
+  position: absolute;
+  inset: 0;
   transform: translate3d(0, -100%, 0);
-  transition-delay: 0.4s;
+}
+
+.open .stage {
+  transform: translate3d(0, 0, 0);
+}
+
+.open.enterSlide {
+  animation: panelIn var(--enter-leg) var(--ease-panel) both;
+}
+
+.open.enterSlide .stage {
+  animation: stageIn var(--enter-leg) var(--ease-panel) both;
+}
+
+.open.enterFade {
+  animation: panelFadeIn var(--enter-leg) var(--ease-content) both;
+}
+
+/* Closing outright: the contents go first, then the panel follows them out.
+   Both legs are CSS, so no timer sits between them to drift. */
+.closing {
   pointer-events: none;
 }
 
-.open.closing.navigating {
-  transform: translate3d(0, 0, 0);
-  transition: none;
+.closing.exitSlide {
+  animation: panelOut var(--exit-leg) var(--ease-panel) var(--content-lead) both;
 }
 
-.closeButton {
+.closing.exitSlide .stage {
+  animation: stageOut var(--exit-leg) var(--ease-panel) var(--content-lead) both;
+}
+
+.closing.exitFade {
+  animation: panelFadeOut var(--exit-leg) var(--ease-content) var(--content-lead)
+    both;
+}
+
+.list {
   position: absolute;
-  top: 3vh;
-  right: 2vw;
-  z-index: 110;
-  border: 0;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  color: inherit;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.4s ease-out;
-}
-
-.open:not(.closing) .closeButton {
-  opacity: 1;
-  pointer-events: auto;
-  transition-delay: 0.8s;
-}
-
-.open.closing .closeButton {
-  opacity: 0;
-  pointer-events: none;
-  transition-delay: 0s;
-}
-
-.open.closing .closeTrack {
-  animation: none;
-  transform: translate3d(0, 0, 0);
-}
-
-.closeMask {
-  display: block;
-  height: 1em;
-  overflow: hidden;
-}
-
-.closeTrack {
-  display: flex;
-  flex-direction: column;
-  transform: translate3d(0, 0, 0);
-  will-change: transform;
-}
-
-.closeLine {
-  display: block;
-  height: 1em;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.closeEnter .closeTrack {
-  animation: closeRollIn 0.2s ease-out both;
-}
-
-.navigationList {
-  position: absolute;
-  left: 15vw;
   top: 50%;
+  left: 50%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
 }
 
-.navigationItem {
+.item {
+  display: block;
   overflow: hidden;
-  line-height: 1;
+  line-height: 1.2;
 }
 
-.navigationItem a {
+.link {
   display: block;
   color: inherit;
   text-decoration: none;
-  font-family: "Futura", Arial, Helvetica, sans-serif;
-  font-size: clamp(5rem, 6vw, 7rem);
-  line-height: 1;
-  transition: color 0.3s ease-out;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: var(--nav-size);
+  line-height: 1.2;
+  transition: color 0.2s ease-out;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .navigationList:has(.navigationItem a:hover) .navigationItem a {
-    color: #333333;
-  }
-
-  .navigationList:has(.navigationItem a:hover) .navigationItem a:hover {
-    color: #FFFFFF;
-  }
-}
-
-.navigationItem span {
+/* Waiting below its mask until the panel is nearly in place. */
+.label {
   display: block;
   transform: translate3d(0, 100%, 0);
-  transition: transform 0.4s ease-out;
   will-change: transform;
 }
 
-.open .navigationItem span {
-  transform: translate3d(0, 0, 0);
-  transition-duration: 0.4s;
-  transition-delay: 0.8s;
+.chrome {
+  opacity: 0;
 }
 
-.open.closing .navigationItem span {
-  transform: translate3d(0, 100%, 0);
-  transition-duration: 0.4s;
-  transition-delay: 0s;
+/* Everything the panel carries arrives together. */
+.open .label {
+  animation: labelIn var(--motion-content) var(--ease-content) var(--panel-lead)
+    both;
 }
 
-@media (max-width: 768px) {
-  .closeButton {
-    top: var(--header-top);
-    right: var(--mobile-header-edge);
-    display: flex;
-    height: var(--mobile-logo-size);
-    align-items: center;
+.open .chrome {
+  animation: fadeIn var(--motion-content) var(--ease-content) var(--panel-lead)
+    both;
+}
+
+.exiting .label {
+  animation: labelOut var(--motion-content) var(--ease-content) both;
+}
+
+/*
+ * The wordmark and button only leave when the panel leaves with them. On the
+ * way to another page they hold still instead, because that page's own chrome
+ * takes their place the instant the route swaps underneath.
+ */
+.closing .chrome {
+  animation: fadeOut var(--motion-content) var(--ease-content) both;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .list:has(.link:hover) .link {
+    color: #CCCCCC;
   }
 
-  .navigationList {
-    left: 10vw;
+  .list:has(.link:hover) .link:hover {
+    color: #000000;
   }
 }
 
-@keyframes closeRollIn {
+/*
+ * The revealing edge runs bottom to top; the taking-away edge follows it. Each
+ * pair moves the box and its contents by the same amount in opposite
+ * directions, so only the edge is ever seen to move.
+ */
+@keyframes panelIn {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes stageIn {
+  from {
+    transform: translate3d(0, -100%, 0);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes panelOut {
   from {
     transform: translate3d(0, 0, 0);
   }
+
   to {
-    transform: translate3d(0, -33.333%, 0);
+    transform: translate3d(0, -100%, 0);
+  }
+}
+
+@keyframes stageOut {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes panelFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes panelFadeOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes labelIn {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes labelOut {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(0, -100%, 0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
   }
 }

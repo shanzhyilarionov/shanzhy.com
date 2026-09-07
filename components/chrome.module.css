@@ -1,0 +1,63 @@
+.chrome {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--page-inset);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.slot {
+  pointer-events: none;
+}
+
+.brand {
+  display: block;
+  white-space: nowrap;
+}
+
+.title {
+  display: flex;
+  margin: 0;
+  font-family: "Acumin", Arial, sans-serif;
+  font-size: var(--display-size);
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.letterMask {
+  display: inline-block;
+  overflow: visible;
+  clip-path: inset(-0.16em 0 -0.22em 0);
+}
+
+.letter {
+  display: inline-block;
+  transform: translateX(-110%);
+  animation: letterIn var(--motion-content) ease-out
+    calc(var(--enter-delay) + var(--motion-content)) both;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .letter {
+    transform: translateX(0);
+    animation: none;
+  }
+}
+
+@keyframes letterIn {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}

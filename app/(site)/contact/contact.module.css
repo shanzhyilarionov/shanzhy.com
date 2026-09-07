@@ -4,11 +4,9 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #000000;
-  color: #FFFFFF;
 }
 
-.contactContent {
+.content {
   width: max-content;
   display: flex;
   flex-direction: column;
@@ -19,44 +17,14 @@
   line-height: 1;
 }
 
-.contactItem {
+.item {
   position: relative;
   width: max-content;
-}
-
-.revealClip {
-  overflow: visible;
-}
-
-.revealContent {
-  animation: itemEnter var(--item-duration) ease-out both;
-  animation-delay: var(--enter-delay);
+  animation: itemEnter var(--duration) ease-out var(--delay) both;
   will-change: opacity, transform;
 }
 
-:global([data-content-motion="exit"]) .revealContent {
-  animation: itemExit var(--item-duration) ease-in both;
-  animation-delay: 0s;
-}
-
-.contactLink {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-}
-
-.emailButton {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  font: inherit;
-  line-height: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.copiedMessage {
+.copied {
   position: absolute;
   top: 50%;
   left: calc(100% + 0.75rem);
@@ -68,46 +36,16 @@
   pointer-events: none;
 }
 
-.copiedMessageVisible {
+.copiedVisible {
   opacity: 1;
 }
 
-:global([data-content-motion="exit"]) .copiedMessage {
-  opacity: 0;
-}
-
-.labelMask {
-  display: block;
-  height: 1.15em;
-  overflow: hidden;
-}
-
-.labelTrack {
-  display: flex;
-  flex-direction: column;
-  transform: translate3d(0, 0, 0);
-  will-change: transform;
-}
-
-.labelLine {
-  display: block;
-  height: 1.15em;
-  line-height: 1.15;
-  white-space: nowrap;
-}
-
-.rollEnter .labelTrack {
-  animation: labelRollIn 0.2s ease-out both;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .revealContent,
-  :global([data-content-motion="exit"]) .revealContent,
-  .rollEnter .labelTrack {
+  .item {
     animation: none;
   }
 
-  .copiedMessage {
+  .copied {
     transition: none;
   }
 }
@@ -115,33 +53,11 @@
 @keyframes itemEnter {
   from {
     opacity: 0;
-    transform: translate3d(0, -1rem, 0);
+    transform: translate3d(0, 1rem, 0);
   }
 
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes itemExit {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-
-  to {
-    opacity: 0;
-    transform: translate3d(0, -1rem, 0);
-  }
-}
-
-@keyframes labelRollIn {
-  from {
-    transform: translate3d(0, 0, 0);
-  }
-
-  to {
-    transform: translate3d(0, -33.333%, 0);
   }
 }

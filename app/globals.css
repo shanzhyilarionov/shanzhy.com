@@ -4,24 +4,57 @@
   font-family: "Acumin";
   src: url("/fonts/acumin-pro-extra-condensed-extra-light.woff2") format("woff2");
 }
-@font-face {
-  font-family: "Futura";
-  src: url("/fonts/futura-light.woff") format("woff");
-}
 
 :root {
-  --page-edge: clamp(1.5rem, 2.2vw, 3rem);
-  --header-top: clamp(1rem, 1.5vw, 2rem);
-  --mobile-header-edge: clamp(0.75rem, 2.5vw, 1rem);
-  --mobile-logo-size: clamp(2.25rem, 9.4vw, 3.1rem);
+  /* The 1/20 and 19/20 lines. Everything pinned to an edge sits on one. */
+  --page-inset: 5vw;
+
+  /* Fixed, not viewport-relative: these two never change size. */
+  --display-size: 70px;
+  --nav-size: 50px;
+
+  /*
+   * The panel's leg and its contents' leg overlap by `--motion-overlap`, so
+   * neither ever waits on a dead stop while still leaving the page underneath
+   * a moment of fading on its own at each end. `--motion-panel`
+   * is the slide, used over home; everywhere else the panel is white on white
+   * and simply fades, which takes `--motion-content` like everything else.
+   *
+   * Mirrored by PANEL_MS / CONTENT_MS / OVERLAP_MS in shell.jsx, which have to
+   * know when each leg is over; keep the two in step.
+   */
+  --motion-panel: 1s;
+  --motion-content: 0.5s;
+  --motion-overlap: 0.2s;
+
+  /*
+   * A curve that starts or ends at speed would leave a visible seam where one
+   * leg hands over to the next. Both of these begin and end at rest: the panel
+   * with a long, weighted middle, its contents with a shorter push and a
+   * longer settle.
+   */
+  --ease-panel: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-content: cubic-bezier(0.62, 0, 0.2, 1);
+
+  /*
+   * How long home waits before it begins. Arriving through the panel it has to
+   * sit still until the panel is completely gone; on a first paint there is
+   * nothing to wait for. shell.jsx sets the value.
+   */
+  --enter-delay: 0ms;
 }
 
 html,
 body {
   width: 100%;
   min-height: 100%;
-  background: #000000;
-  color: #FFFFFF;
+  /*
+   * The site is white; only the home page is black, and it paints its own
+   * background. Every page change happens behind the opaque navigation panel,
+   * so the two never meet in the open.
+   */
+  background: #FFFFFF;
+  color: #000000;
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -29,14 +62,5 @@ body {
 .blankPage {
   width: 100vw;
   min-height: 100svh;
-  background: #000000;
-  color: #FFFFFF;
   overflow: hidden;
-}
-
-@media (max-width: 768px) {
-  :root {
-    --page-edge: clamp(1.5rem, 4.5vw, 2.75rem);
-    --header-top: clamp(0.65rem, 2vw, 1rem);
-  }
 }

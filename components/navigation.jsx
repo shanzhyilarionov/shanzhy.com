@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import Chrome, { Brand } from "./chrome";
+import RollingText from "./rolling-text";
 import styles from "./navigation.module.css";
 
 const links = [
@@ -12,168 +12,82 @@ const links = [
   { href: "/contact", label: "Contact" },
 ];
 
+/**
+ * The full-screen navigation panel.
+ *
+ * It knows nothing about routing: the shell drives it through `phase` and
+ * hears back through `onLeave`, which takes a destination or nothing at all
+ * when the panel should simply close.
+ *
+ * `enterSlide` and `exitSlide` pick how the panel arrives and how it leaves:
+ * travelling, over the black home page, or merely fading, over a white one.
+ * They are separate because a panel that faded in over contact still has to
+ * slide away over home.
+ *
+ * `chrome` asks for a copy of the wordmark and button — only ever true over
+ * home, whose own chrome is white on black and therefore has to stay
+ * underneath; everywhere else the page's chrome sits above the panel and this
+ * would only duplicate it.
+ */
 export default function Navigation({
-  open,
-  onClose,
-  onNavigate,
-  onCovered,
-  onReveal,
+  phase,
+  enterSlide,
+  exitSlide,
+  chrome,
+  chromeLabel,
+  onToggle,
+  onLeave,
 }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const [closing, setClosing] = useState(false);
-  const [closeMotion, setCloseMotion] = useState("");
-  const [pendingHref, setPendingHref] = useState(null);
+  const open = phase !== "closed";
 
-  /**
-   * Opening or closing the drawer clears whatever close was in flight.
-   *
-   * Comparing against the previous prop during render is React's documented
-   * alternative to resetting state from an effect: the adjustment happens in
-   * the same pass, so nothing is ever painted with the stale value.
-   */
-  const [wasOpen, setWasOpen] = useState(open);
-
-  if (wasOpen !== open) {
-    setWasOpen(open);
-    setClosing(false);
-    setPendingHref(null);
-  }
-
-  const handleClose = () => {
-    if (!open || closing) {
-      return;
-    }
-    onReveal?.();
-    setCloseMotion("");
-    setClosing(true);
-  };
-
-  const handleLinkClick = (event, href) => {
-    event.preventDefault();
-    if (!open || closing) {
-      return;
-    }
-    setPendingHref(href === pathname ? null : href);
-    handleClose();
-  };
-
-  const finishClose = () => {
-    if (!closing) {
-      return;
-    }
-
-    const href = pendingHref;
-
-    if (href && onNavigate) {
-      onNavigate(href);
-      return;
-    }
-
-    if (href && href !== pathname) {
-      router.push(href);
-      return;
-    }
-
-    setPendingHref(null);
-    setClosing(false);
-    onClose();
-  };
-
-  const closeClassName = [
-    styles.closeButton,
-    closeMotion === "enter" ? styles.closeEnter : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const navigationClassName = [
+  const className = [
     styles.navigation,
+    enterSlide ? styles.enterSlide : styles.enterFade,
+    exitSlide ? styles.exitSlide : styles.exitFade,
     open ? styles.open : "",
-    closing ? styles.closing : "",
-    pendingHref ? styles.navigating : "",
+    /* Everything past `open` keeps the contents off the screen. */
+    open && phase !== "open" ? styles.exiting : "",
+    phase === "closing" ? styles.closing : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
-    <section
-      className={navigationClassName}
-      aria-hidden={!open}
-      onTransitionEnd={(event) => {
-        if (
-          event.target !== event.currentTarget ||
-          event.propertyName !== "transform"
-        ) {
-          return;
-        }
+    <section className={className} aria-hidden={!open}>
+      {/* Held still against the panel's travel, so only the edge moves. */}
+      <div className={styles.stage}>
+        {chrome && (
+          <Chrome
+            className={styles.chrome}
+            left={<Brand />}
+            right={
+              <RollingText
+                type="button"
+                label={chromeLabel}
+                aria-label="Close navigation"
+                onClick={onToggle}
+              />
+            }
+          />
+        )}
 
-        if (open && !closing) {
-          onCovered?.();
-          return;
-        }
-
-        if (closing && !pendingHref) {
-          finishClose();
-        }
-      }}
-    >
-      <button
-        className={closeClassName}
-        type="button"
-        aria-label="Close navigation"
-        onClick={handleClose}
-        onPointerEnter={(event) => {
-          if (event.pointerType === "mouse") {
-            setCloseMotion("enter");
-          }
-        }}
-      >
-        <span className={styles.closeMask} aria-hidden="true">
-          <span
-            className={styles.closeTrack}
-            onAnimationEnd={() => {
-              if (closeMotion === "enter") {
-                setCloseMotion("");
-              }
-            }}
-          >
-            <span className={styles.closeLine}>Close</span>
-            <span className={styles.closeLine}>Close</span>
-            <span className={styles.closeLine}>Close</span>
-          </span>
-        </span>
-      </button>
-
-      <nav className={styles.navigationList} aria-label="Main navigation">
-        {links.map((link, index) => (
-          <div className={styles.navigationItem} key={link.href}>
-            <Link
-              href={link.href}
-              onClick={(event) => {
-                handleLinkClick(event, link.href);
-              }}
-            >
-              <span
-                onTransitionEnd={
-                  index === links.length - 1
-                    ? (event) => {
-                        if (
-                          event.propertyName === "transform" &&
-                          pendingHref
-                        ) {
-                          finishClose();
-                        }
-                      }
-                    : undefined
-                }
+        <nav className={styles.list} aria-label="Main navigation">
+          {links.map((link) => (
+            <span className={styles.item} key={link.href}>
+              <Link
+                className={styles.link}
+                href={link.href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onLeave(link.href);
+                }}
               >
-                {link.label}
-              </span>
-            </Link>
-          </div>
-        ))}
-      </nav>
+                <span className={styles.label}>{link.label}</span>
+              </Link>
+            </span>
+          ))}
+        </nav>
+      </div>
     </section>
   );
 }
