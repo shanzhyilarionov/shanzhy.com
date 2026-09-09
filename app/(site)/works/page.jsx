@@ -8,16 +8,19 @@ const projects = [
   {
     title: "Genesis",
     image: "/images/genesis.png",
+    aspectRatio: 2880 / 1800,
     duration: "0.8s",
   },
   {
     title: "shanzhy.io",
     image: "/images/shanzhy.png",
+    aspectRatio: 1438 / 899,
     duration: "0.5s",
   },
   {
     title: "Commissioning Workspace",
     image: "/images/commissioning-workspace.png",
+    aspectRatio: 2880 / 1800,
     duration: "1s",
   },
 ];
@@ -51,40 +54,48 @@ export default function Works() {
         }
       }}
     >
-      <section
-        className={[
-          styles.projects,
-          hoverEnabled ? styles.hoverEnabled : "",
-          resizing ? styles.resizing : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-label="Selected projects"
-      >
-        {projects.map((project) => (
-          <article
-            className={styles.project}
-            style={{ "--reveal-duration": project.duration }}
-            key={project.title}
-          >
-            <div className={styles.reveal}>
-              <div className={styles.revealContent}>
-                <div className={styles.imageFrame}>
-                  <Image
-                    className={styles.image}
-                    src={project.image}
-                    alt={`${project.title} project preview`}
-                    fill
-                    sizes="(max-width: 768px) 22vw, 29rem"
-                    priority
-                  />
+      <section className={styles.content} aria-labelledby="works-heading">
+        <h1 className={styles.heading} id="works-heading">
+          <span className={styles.headingLabel}>Things I’ve built.</span>
+        </h1>
+
+        <div
+          className={[
+            styles.projects,
+            hoverEnabled ? styles.hoverEnabled : "",
+            resizing ? styles.resizing : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
+          {projects.map((project) => (
+            <article
+              className={styles.project}
+              style={{
+                "--reveal-duration": project.duration,
+                "--image-ratio": project.aspectRatio,
+              }}
+              key={project.title}
+            >
+              <div className={styles.reveal}>
+                <div className={styles.revealContent}>
+                  <div className={styles.imageFrame}>
+                    <Image
+                      className={styles.image}
+                      src={project.image}
+                      alt={`${project.title} project preview`}
+                      fill
+                      sizes="18rem"
+                      priority
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <h2 className={styles.title}>{project.title}</h2>
-          </article>
-        ))}
+              <h2 className={styles.title}>{project.title}</h2>
+            </article>
+          ))}
+        </div>
       </section>
     </main>
   );

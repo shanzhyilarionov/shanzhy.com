@@ -1,17 +1,44 @@
 .page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   width: 100vw;
   min-height: 100svh;
   place-items: center;
   overflow: hidden;
 }
 
+.content {
+  display: grid;
+  gap: 1.5rem;
+  width: max-content;
+  max-width: calc(100% - 2 * var(--page-inset));
+}
+
+.heading {
+  margin: 0;
+  overflow: hidden;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: var(--nav-size);
+  font-weight: 400;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.headingLabel {
+  display: block;
+  animation: headingIn 0.5s var(--ease-content) 0.5s both;
+}
+
 .projects {
-  --tile-size: clamp(9rem, 14vw, 18rem);
+  --tile-gap: 0.75rem;
+  /* Keep the resting row as wide as the heading, even during hover. */
+  --tile-size: calc((100cqw - 2 * var(--tile-gap)) / 3);
+  container-type: inline-size;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: clamp(0.75rem, 1.5vw, 2rem);
+  gap: var(--tile-gap);
   width: 100%;
 }
 
@@ -34,27 +61,19 @@
 .imageFrame {
   position: relative;
   width: 100%;
-  height: var(--tile-size);
+  height: calc(var(--tile-size) * 1.5);
   overflow: hidden;
-}
-
-.imageFrame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: #fff;
-  opacity: 0.25;
-  pointer-events: none;
-  transition: opacity 0.5s var(--ease-content);
 }
 
 .image {
   object-fit: cover;
+  filter: grayscale(1);
+  transition: filter 0.5s var(--ease-content);
 }
 
 .title {
   position: absolute;
-  top: calc(var(--tile-size) + 0.75rem);
+  top: calc(var(--tile-size) * 1.5 + 0.75rem);
   left: 0;
   width: 100%;
   margin: 0;
@@ -69,11 +88,11 @@
 
 @media (hover: hover) and (pointer: fine) {
   .hoverEnabled .project:hover {
-    flex-basis: calc(var(--tile-size) * 1.6);
+    flex-basis: calc(var(--tile-size) * 1.5 * var(--image-ratio));
   }
 
-  .hoverEnabled .project:hover .imageFrame::after {
-    opacity: 0;
+  .hoverEnabled .project:hover .image {
+    filter: grayscale(0);
   }
 
   .hoverEnabled .project:hover .title {
@@ -88,19 +107,29 @@
 
 @media (max-width: 768px) {
   .projects {
-    --tile-size: 22vw;
-    gap: 2vw;
+    --tile-gap: 2vw;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .headingLabel,
   .project,
   .reveal,
   .revealContent,
-  .imageFrame::after,
+  .image,
   .title {
     animation: none;
     transition: none;
+  }
+}
+
+@keyframes headingIn {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+
+  to {
+    transform: translate3d(0, 0, 0);
   }
 }
 
