@@ -50,8 +50,14 @@
 }
 
 .reveal {
+  display: block;
   overflow: hidden;
   animation: revealUp var(--reveal-duration) var(--ease-panel) both;
+}
+
+.reveal:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
 }
 
 .revealContent {
@@ -105,6 +111,23 @@
   transition: none;
 }
 
+.departing .title {
+  transition-duration: var(--exit-duration);
+  transition-delay: 0s;
+}
+
+.exiting .headingLabel {
+  animation: headingOut var(--exit-duration) var(--ease-content) both;
+}
+
+.exiting .reveal {
+  animation: revealOut var(--exit-duration) var(--ease-panel) both;
+}
+
+.exiting .revealContent {
+  animation: contentOut var(--exit-duration) var(--ease-panel) both;
+}
+
 @media (max-width: 768px) {
   .projects {
     --tile-gap: 2vw;
@@ -117,7 +140,11 @@
   .reveal,
   .revealContent,
   .image,
-  .title {
+  .title,
+  .departing .title,
+  .exiting .headingLabel,
+  .exiting .reveal,
+  .exiting .revealContent {
     animation: none;
     transition: none;
   }
@@ -150,5 +177,35 @@
 
   to {
     transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes headingOut {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(0, -100%, 0);
+  }
+}
+
+@keyframes revealOut {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(0, -100%, 0);
+  }
+}
+
+@keyframes contentOut {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(0, 100%, 0);
   }
 }

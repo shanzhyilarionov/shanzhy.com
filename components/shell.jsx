@@ -30,8 +30,8 @@ export default function Shell({ children }) {
   const isWorks = pathname === "/works";
 
   /**
-   * The site has exactly one route transition, and it runs through the
-   * navigation panel. Because the panel is opaque, the page swap itself is
+   * Menu route transitions run through the navigation panel.
+   * Because the panel is opaque, the page swap itself is
    * never seen:
    *
    *   open      the panel arrives, then its contents arrive

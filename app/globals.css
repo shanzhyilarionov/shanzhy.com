@@ -48,8 +48,8 @@ body {
   min-height: 100%;
   /*
    * The site is white; only the home page is black, and it paints its own
-   * background. Every page change happens behind the opaque navigation panel,
-   * so the two never meet in the open.
+   * background. Changes between home and white pages happen behind the opaque
+   * navigation panel, so the two never meet in the open.
    */
   background: #FFFFFF;
   color: #000000;
