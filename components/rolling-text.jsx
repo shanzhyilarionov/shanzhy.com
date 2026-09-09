@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useHoverEnabled } from "./hover-boundary";
 import styles from "./rolling-text.module.css";
 
 /**
@@ -21,9 +22,14 @@ export default function RollingText({
   className,
   ...props
 }) {
+  const hoverEnabled = useHoverEnabled();
   const [shown, setShown] = useState(label);
   const [swap, setSwap] = useState("");
   const [rolling, setRolling] = useState(false);
+
+  if (!hoverEnabled && rolling) {
+    setRolling(false);
+  }
 
   /* The label was replaced under us; take the old one out first. */
   if (label !== shown && !swap) {
@@ -56,7 +62,18 @@ export default function RollingText({
         }
       }}
       onPointerEnter={(event) => {
-        if (event.pointerType === "mouse") {
+        if (hoverEnabled && event.pointerType === "mouse") {
+          setRolling(true);
+        }
+      }}
+      onPointerMove={(event) => {
+        // The first movement may happen inside a control already under the
+        // cursor, so it must start the roll without another pointerenter.
+        if (
+          !hoverEnabled &&
+          event.pointerType === "mouse" &&
+          (event.movementX !== 0 || event.movementY !== 0)
+        ) {
           setRolling(true);
         }
       }}

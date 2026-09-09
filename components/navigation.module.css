@@ -21,9 +21,9 @@
   visibility: hidden;
   pointer-events: none;
 
-  /* Each leg starts `--motion-overlap` before the one before it ends. */
-  --panel-lead: calc(var(--enter-leg) - var(--motion-overlap));
-  --content-lead: calc(var(--motion-content) - var(--motion-overlap));
+  /* Fade transitions run both legs in full; only home's slide overlaps. */
+  --panel-lead: var(--enter-leg);
+  --content-lead: var(--motion-content);
 }
 
 /*
@@ -34,6 +34,7 @@
  */
 .enterSlide {
   --enter-leg: var(--motion-panel);
+  --panel-lead: calc(var(--enter-leg) - var(--motion-overlap));
 }
 
 .enterFade {
@@ -42,6 +43,7 @@
 
 .exitSlide {
   --exit-leg: var(--motion-panel);
+  --content-lead: calc(var(--motion-content) - var(--motion-overlap));
 }
 
 .exitFade {
@@ -158,11 +160,11 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .list:has(.link:hover) .link {
+  .hoverEnabled .list:has(.link:hover) .link {
     color: #CCCCCC;
   }
 
-  .list:has(.link:hover) .link:hover {
+  .hoverEnabled .list:has(.link:hover) .link:hover {
     color: #000000;
   }
 }

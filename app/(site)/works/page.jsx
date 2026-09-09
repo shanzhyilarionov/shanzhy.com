@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { useHoverEnabled } from "../../../components/hover-boundary";
 import styles from "./works.module.css";
 
 const projects = [
@@ -26,7 +27,7 @@ const projects = [
 ];
 
 export default function Works() {
-  const [hoverEnabled, setHoverEnabled] = useState(false);
+  const hoverEnabled = useHoverEnabled();
   const [resizing, setResizing] = useState(false);
 
   useEffect(() => {
@@ -46,14 +47,7 @@ export default function Works() {
   }, []);
 
   return (
-    <main
-      className={styles.page}
-      onPointerMove={(event) => {
-        if (!hoverEnabled && event.pointerType === "mouse") {
-          setHoverEnabled(true);
-        }
-      }}
-    >
+    <main className={styles.page}>
       <section className={styles.content} aria-labelledby="works-heading">
         <h1 className={styles.heading} id="works-heading">
           <span className={styles.headingLabel}>Things I’ve built.</span>

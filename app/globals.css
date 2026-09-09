@@ -14,11 +14,9 @@
   --nav-size: 50px;
 
   /*
-   * The panel's leg and its contents' leg overlap by `--motion-overlap`, so
-   * neither ever waits on a dead stop while still leaving the page underneath
-   * a moment of fading on its own at each end. `--motion-panel`
-   * is the slide, used over home; everywhere else the panel is white on white
-   * and simply fades, which takes `--motion-content` like everything else.
+   * Over home, the panel's slide and its contents overlap by `--motion-overlap`.
+   * Everywhere else the panel fades for `--motion-content`, and the two legs
+   * run in sequence with no overlap.
    *
    * Mirrored by PANEL_MS / CONTENT_MS / OVERLAP_MS in shell.jsx, which have to
    * know when each leg is over; keep the two in step.

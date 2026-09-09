@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Chrome, { Brand } from "./chrome";
 import RollingText from "./rolling-text";
+import { useHoverEnabled } from "./hover-boundary";
 import styles from "./navigation.module.css";
 
 const links = [
@@ -39,9 +40,11 @@ export default function Navigation({
   onLeave,
 }) {
   const open = phase !== "closed";
+  const hoverEnabled = useHoverEnabled();
 
   const className = [
     styles.navigation,
+    hoverEnabled ? styles.hoverEnabled : "",
     enterSlide ? styles.enterSlide : styles.enterFade,
     exitSlide ? styles.exitSlide : styles.exitFade,
     open ? styles.open : "",

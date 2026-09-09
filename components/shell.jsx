@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Chrome, { Brand, HomeTitle } from "./chrome";
 import Navigation from "./navigation";
 import RollingText from "./rolling-text";
+import { HoverBoundary } from "./hover-boundary";
 import { SceneAnimationPauseProvider } from "./scene-animation-context";
 import styles from "./shell.module.css";
 
@@ -15,7 +16,7 @@ const OVERLAP_MS = 300;
 
 /** How long a close takes, contents and panel together. */
 const closeMs = (slide) =>
-  CONTENT_MS - OVERLAP_MS + (slide ? PANEL_MS : CONTENT_MS);
+  CONTENT_MS + (slide ? PANEL_MS - OVERLAP_MS : CONTENT_MS);
 
 /** What the right-hand button says when the panel is down. */
 function restingLabel(path) {
@@ -158,7 +159,11 @@ export default function Shell({ children }) {
   return (
     <SceneAnimationPauseProvider paused={covered}>
       {/* Carries --enter-delay down to the home page and its title. */}
-      <div className={styles.shell} style={{ "--enter-delay": `${enterDelay}ms` }}>
+      <HoverBoundary
+        viewKey={`${pathname}:${phase}`}
+        className={styles.shell}
+        style={{ "--enter-delay": `${enterDelay}ms` }}
+      >
         <Chrome
           className={[
             isHome ? styles.chromeOnDark : styles.chromeAbovePanel,
@@ -209,7 +214,7 @@ export default function Shell({ children }) {
           onToggle={toggleNavigation}
           onLeave={leaveNavigation}
         />
-      </div>
+      </HoverBoundary>
     </SceneAnimationPauseProvider>
   );
 }
