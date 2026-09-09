@@ -8,6 +8,7 @@
 
 .content {
   width: max-content;
+  max-width: calc(100% - 2 * var(--page-inset));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -17,9 +18,20 @@
   line-height: 1;
 }
 
+.heading {
+  margin: 0 0 1.5rem;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: var(--nav-size);
+  font-weight: 400;
+  line-height: 1;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 .item {
   position: relative;
   width: max-content;
+  max-width: 100%;
   animation: itemEnter var(--duration) ease-out var(--delay) both;
   will-change: opacity, transform;
 }
@@ -29,7 +41,7 @@
   top: 50%;
   left: calc(100% + 0.75rem);
   transform: translateY(-50%);
-  line-height: 1.15;
+  line-height: 1;
   white-space: nowrap;
   opacity: 0;
   transition: opacity 0.2s ease-in-out;

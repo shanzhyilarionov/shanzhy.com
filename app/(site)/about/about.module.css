@@ -1,0 +1,74 @@
+.page {
+  display: grid;
+  width: 100%;
+  height: 100svh;
+  padding: 3rem calc(var(--page-inset) + 6rem);
+  place-items: center;
+  overflow-y: auto;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5em;
+  width: 100%;
+  max-width: 42rem;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.paragraph {
+  position: relative;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.heading {
+  position: relative;
+  margin: 0 0 1.5rem;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: var(--nav-size);
+  font-weight: 400;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.line {
+  position: absolute;
+  inset: 0;
+  display: block;
+  clip-path: inset(var(--clip-top) 0 var(--clip-bottom) 0);
+  pointer-events: none;
+  user-select: none;
+  animation: itemEnter var(--duration) ease-out var(--delay) both;
+}
+
+.content[data-entered="false"] .source {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .line {
+    display: none;
+    animation: none;
+  }
+
+  .content[data-entered="false"] .source {
+    opacity: 1;
+  }
+}
+
+@keyframes itemEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1em, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}

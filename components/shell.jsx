@@ -188,8 +188,8 @@ export default function Shell({ children }) {
         <div
           className={[
             styles.content,
-            /* Home and contact animate their own contents in instead. */
-            isHome || isWorks || pathname === "/contact"
+            /* These pages animate their own contents in. */
+            isHome || isWorks || pathname === "/about" || pathname === "/contact"
               ? ""
               : styles.contentEntering,
           ]

@@ -21,12 +21,14 @@ const socialLinks = [
   },
 ];
 
+const itemCount = socialLinks.length + 2;
+
 /**
  * One line of the list, rising into place. The lines are staggered so that
  * they all settle together: the bottom one starts first and takes the longest.
  */
 function Reveal({ index, children }) {
-  const duration = (index + 2) * 100;
+  const duration = 200 + (300 * index) / (itemCount - 1);
 
   return (
     <div
@@ -95,6 +97,10 @@ export default function Contact() {
     <main className={styles.contactPage}>
       <section className={styles.content} aria-label="Contact information">
         <Reveal index={0}>
+          <h1 className={styles.heading}>Start a conversation.</h1>
+        </Reveal>
+
+        <Reveal index={1}>
           <RollingText
             type="button"
             label={email}
@@ -112,7 +118,7 @@ export default function Contact() {
         </Reveal>
 
         {socialLinks.map((link, index) => (
-          <Reveal index={index + 1} key={link.label}>
+          <Reveal index={index + 2} key={link.label}>
             <RollingText
               as="a"
               href={link.href}
